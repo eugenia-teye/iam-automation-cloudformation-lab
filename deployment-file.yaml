@@ -1,1 +1,5 @@
-
+template-file-path: /template.yaml
+parameters: {}
+tags:
+  Project: IAM-Lab
+  Environment: Learning
