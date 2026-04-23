@@ -1,1 +1,126 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  IAM Lab - Creates IAM users, groups, and permissions
+  with auto-generated password stored in Secrets Manager.
 
+Resources:
+
+  # 1. AUTO-GENERATED PASSWORD IN SECRETS MANAGER
+  IAMUserPassword:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: iam-lab-user-password
+      Description: Auto-generated one-time password for IAM lab users
+      GenerateSecretString:
+        SecretStringTemplate: '{"username": "lab-user"}'
+        GenerateStringKey: password
+        PasswordLength: 16
+        ExcludeCharacters: '"@/\'
+        RequireEachIncludedType: true
+
+
+  # 2. S3 GROUP + POLICY (list buckets only)
+  S3UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: S3UserGroup
+
+  S3GroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: S3ListBucketsPolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - s3:ListAllMyBuckets
+              - s3:GetBucketLocation
+            Resource: '*'
+      Groups:
+        - !Ref S3UserGroup
+
+  # 3. EC2 GROUP + POLICY (list + create EC2)
+  EC2UserGroup:
+    Type: AWS::IAM::Group
+    Properties:
+      GroupName: EC2UserGroup
+
+  EC2GroupPolicy:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: EC2ListAndCreatePolicy
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action:
+              - ec2:DescribeInstances
+              - ec2:DescribeImages
+              - ec2:DescribeKeyPairs
+              - ec2:DescribeSecurityGroups
+              - ec2:DescribeSubnets
+              - ec2:DescribeVpcs
+              - ec2:RunInstances
+              - ec2:CreateTags
+            Resource: '*'
+      Groups:
+        - !Ref EC2UserGroup
+
+  # 4. IAM USERS
+
+  # ec2-user1 → EC2 Group (can create EC2)
+  EC2User1:
+    Type: AWS::IAM::User
+    DependsOn: IAMUserPassword
+    Properties:
+      UserName: ec2-user1
+      Groups:
+        - !Ref EC2UserGroup
+      LoginProfile:
+        Password: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:password}}'
+          - SecretId: !Ref IAMUserPassword
+        PasswordResetRequired: true
+
+  # ec2-user2 → EC2 Group (can also create EC2 - double negative clarified)
+  EC2User2:
+    Type: AWS::IAM::User
+    DependsOn: IAMUserPassword
+    Properties:
+      UserName: ec2-user2
+      Groups:
+        - !Ref EC2UserGroup
+      LoginProfile:
+        Password: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:password}}'
+          - SecretId: !Ref IAMUserPassword
+        PasswordResetRequired: true
+
+  # s3-user → S3 Group (can only list buckets)
+  S3User:
+    Type: AWS::IAM::User
+    DependsOn: IAMUserPassword
+    Properties:
+      UserName: s3-user
+      Groups:
+        - !Ref S3UserGroup
+      LoginProfile:
+        Password: !Sub
+          - '{{resolve:secretsmanager:${SecretId}:SecretString:password}}'
+          - SecretId: !Ref IAMUserPassword
+        PasswordResetRequired: true
+
+# OUTPUTS
+Outputs:
+  PasswordSecretARN:
+    Description: ARN of the Secrets Manager secret containing the shared password
+    Value: !Ref IAMUserPassword
+
+  S3GroupName:
+    Description: S3 User Group Name
+    Value: !Ref S3UserGroup
+
+  EC2GroupName:
+    Description: EC2 User Group Name
+    Value: !Ref EC2UserGroup
